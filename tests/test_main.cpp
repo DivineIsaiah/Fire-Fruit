@@ -76,33 +76,27 @@ bool testFileSearcher() {
 }
 
 bool testStudentExtractor() {
-    const std::filesystem::path realWorkbookPath = R"(C:\Users\USER\Documents\DEV n STUFF\PROJECTS\Pesonal Projects\RESULTS\20-21\YEAR 1\FIRST SEMESTER\BASIC_MEDICAL_SCIENCES_MEDICINE_AND_SURGERY._2020_2021_1_AEB141Animal_Biology_I.xlsx)";
-
-    std::filesystem::path workbookPath = realWorkbookPath;
     std::filesystem::path root = std::filesystem::temp_directory_path() / "sde_extractor_test";
     std::filesystem::path outputsRoot = root / "OUTPUTS";
-    if (!std::filesystem::exists(realWorkbookPath)) {
-        std::filesystem::remove_all(root);
-        std::filesystem::create_directories(root / "RESULTS");
-        std::filesystem::create_directories(outputsRoot);
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root / "RESULTS");
+    std::filesystem::create_directories(outputsRoot);
 
-        const std::vector<std::vector<std::string>> rows = {
-            {"Matric No", "Name", "CA", "Exam", "Total", "Grade"},
-            {"MIVA/CSC/21/1234", "Divine Isaiah", "28", "55", "83", "A"},
-            {"MIVA/CSC/21/1234", "Divine Isaiah", "30", "60", "90", "A"},
-            {"MIVA/CSC/21/9999", "Someone Else", "10", "20", "30", "C"}
-        };
-        workbookPath = root / "RESULTS" / "CSC301.xlsx";
-        createWorkbook(workbookPath, rows);
-    }
+    const std::vector<std::vector<std::string>> rows = {
+        {"Matric No", "Name", "CA", "Exam", "Total", "Grade"},
+        {"MIVA/CSC/21/1234", "Divine Isaiah", "28", "55", "83", "A"},
+        {"MIVA/CSC/21/1234", "Divine Isaiah", "30", "60", "90", "A"},
+        {"MIVA/CSC/21/9999", "Someone Else", "10", "20", "30", "C"}
+    };
+    const std::filesystem::path workbookPath = root / "RESULTS" / "CSC301.xlsx";
+    createWorkbook(workbookPath, rows);
 
     sde::ApplicationConfig config;
     config.appRoot = root;
     config.resultsRoot = workbookPath.parent_path();
     config.outputsRoot = outputsRoot;
 
-    const std::string targetMatric = !std::filesystem::exists(realWorkbookPath) ? "MIVA/CSC/21/1234" : "DE.2020/10256";
-    sde::StudentExtractor extractor(config, targetMatric);
+    sde::StudentExtractor extractor(config, "MIVA/CSC/21/1234");
     auto result = extractor.processWorkbook(workbookPath);
 
     if (result.records.empty()) {
@@ -110,41 +104,24 @@ bool testStudentExtractor() {
         return false;
     }
 
-    if (std::filesystem::exists(realWorkbookPath)) {
-        auto& record = result.records.front();
-        const auto testOne = record.fields.find("TEST 1");
-        const auto totalScore = record.fields.find("Total Score");
-        const auto letterGrade = record.fields.find("Letter Grade");
+    if (result.records.size() != 2) {
+        std::filesystem::remove_all(root);
+        return false;
+    }
 
-        if (testOne == record.fields.end() || totalScore == record.fields.end() || letterGrade == record.fields.end()) {
-            std::filesystem::remove_all(root);
-            return false;
-        }
+    if (result.records[0].fields["Name"] != "Divine Isaiah") {
+        std::filesystem::remove_all(root);
+        return false;
+    }
 
-        if (testOne->second != "8" || totalScore->second != "47" || letterGrade->second != "D") {
-            std::filesystem::remove_all(root);
-            return false;
-        }
-    } else {
-        if (result.records.size() != 2) {
-            std::filesystem::remove_all(root);
-            return false;
-        }
+    if (result.records[1].fields["CA"] != "30") {
+        std::filesystem::remove_all(root);
+        return false;
+    }
 
-        if (result.records[0].fields["Name"] != "Divine Isaiah") {
-            std::filesystem::remove_all(root);
-            return false;
-        }
-
-        if (result.records[1].fields["CA"] != "30") {
-            std::filesystem::remove_all(root);
-            return false;
-        }
-
-        if (result.records[0].fields["Exam"] != "55" || result.records[0].fields["Total"] != "83" || result.records[0].fields["Grade"] != "A") {
-            std::filesystem::remove_all(root);
-            return false;
-        }
+    if (result.records[0].fields["Exam"] != "55" || result.records[0].fields["Total"] != "83" || result.records[0].fields["Grade"] != "A") {
+        std::filesystem::remove_all(root);
+        return false;
     }
 
     std::filesystem::remove_all(root);

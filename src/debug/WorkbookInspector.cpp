@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <algorithm>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -6,12 +7,12 @@
 #include <OpenXLSX.hpp>
 
 int main(int argc, char** argv) {
-    std::filesystem::path workbookPath;
-    if (argc > 1) {
-        workbookPath = argv[1];
-    } else {
-        workbookPath = R"(C:\Users\USER\Documents\DEV n STUFF\PROJECTS\Pesonal Projects\RESULTS\20-21\YEAR 1\FIRST SEMESTER\BASIC_MEDICAL_SCIENCES_MEDICINE_AND_SURGERY._2020_2021_1_AEB141Animal_Biology_I.xlsx)";
+    if (argc < 2) {
+        std::cerr << "Usage: workbook_inspector <workbook.xlsx>\n";
+        return 1;
     }
+
+    std::filesystem::path workbookPath = argv[1];
 
     if (!std::filesystem::exists(workbookPath)) {
         std::cerr << "Workbook not found: " << workbookPath << '\n';
