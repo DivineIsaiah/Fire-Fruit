@@ -14,6 +14,8 @@ class Application {
 public:
     Application();
     void run();
+    ExtractionNotification extractStudent(const std::filesystem::path& root,
+                                           const std::string& matricNumber) const;
 
 private:
     std::filesystem::path resolveApplicationRoot() const;
@@ -26,7 +28,6 @@ private:
     std::filesystem::path promptForSearchRoot() const;
     std::string promptForMatricNumber() const;
     std::vector<std::filesystem::path> discoverExcelFiles(const std::filesystem::path& root) const;
-    ExtractionNotification extractStudent(const std::filesystem::path& root, const std::string& matricNumber) const;
     void printSummary(const ExtractionNotification& result) const;
     static std::string formatOutputName(const std::string& matricNumber);
 

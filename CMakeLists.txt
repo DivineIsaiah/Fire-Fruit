@@ -26,6 +26,49 @@ add_executable(workbook_inspector
     src/debug/WorkbookInspector.cpp
 )
 
+if(WIN32)
+    add_executable(StudentDataExtractorGui WIN32
+        src/gui/GuiMain.cpp
+        src/app/Application.cpp
+        src/filesystem/DirectoryBrowser.cpp
+        src/filesystem/FileSearcher.cpp
+        src/excel/ExcelWriter.cpp
+        src/extraction/StudentExtractor.cpp
+        src/extraction/ColumnMatcher.cpp
+        src/utils/StringUtils.cpp
+        src/utils/Logger.cpp
+    )
+
+    target_include_directories(StudentDataExtractorGui PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(StudentDataExtractorGui PRIVATE
+        comctl32
+        shell32
+    )
+
+    add_custom_command(TARGET StudentDataExtractorGui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_BINARY_DIR}/output/libOpenXLSX.dll"
+                "$<TARGET_FILE_DIR:StudentDataExtractorGui>"
+        COMMENT "Copying OpenXLSX runtime DLL next to StudentDataExtractorGui"
+    )
+
+    if(MINGW)
+        get_filename_component(MINGW_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        add_custom_command(TARGET StudentDataExtractorGui POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${MINGW_BIN_DIR}/libstdc++-6.dll"
+                    "$<TARGET_FILE_DIR:StudentDataExtractorGui>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${MINGW_BIN_DIR}/libgcc_s_seh-1.dll"
+                    "$<TARGET_FILE_DIR:StudentDataExtractorGui>"
+            COMMENT "Copying MinGW runtime DLLs next to StudentDataExtractorGui"
+        )
+    endif()
+endif()
+
 target_include_directories(StudentDataExtractor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
@@ -37,6 +80,9 @@ target_include_directories(workbook_inspector PRIVATE
 find_package(OpenXLSX CONFIG QUIET)
 if(OpenXLSX_FOUND)
     target_link_libraries(StudentDataExtractor PRIVATE OpenXLSX::OpenXLSX)
+    if(WIN32)
+        target_link_libraries(StudentDataExtractorGui PRIVATE OpenXLSX::OpenXLSX)
+    endif()
     target_link_libraries(workbook_inspector PRIVATE OpenXLSX::OpenXLSX)
 else()
     message(STATUS "OpenXLSX not found via package config; trying FetchContent.")
@@ -48,6 +94,9 @@ else()
     )
     FetchContent_MakeAvailable(openxlsx)
     target_link_libraries(StudentDataExtractor PRIVATE OpenXLSX::OpenXLSX)
+    if(WIN32)
+        target_link_libraries(StudentDataExtractorGui PRIVATE OpenXLSX::OpenXLSX)
+    endif()
     target_link_libraries(workbook_inspector PRIVATE OpenXLSX::OpenXLSX)
 endif()
 
