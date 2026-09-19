@@ -22,13 +22,22 @@ add_executable(StudentDataExtractor
     src/utils/Logger.cpp
 )
 
+add_executable(workbook_inspector
+    src/debug/WorkbookInspector.cpp
+)
+
 target_include_directories(StudentDataExtractor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_include_directories(workbook_inspector PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 find_package(OpenXLSX CONFIG QUIET)
 if(OpenXLSX_FOUND)
     target_link_libraries(StudentDataExtractor PRIVATE OpenXLSX::OpenXLSX)
+    target_link_libraries(workbook_inspector PRIVATE OpenXLSX::OpenXLSX)
 else()
     message(STATUS "OpenXLSX not found via package config; trying FetchContent.")
     include(FetchContent)
@@ -39,6 +48,7 @@ else()
     )
     FetchContent_MakeAvailable(openxlsx)
     target_link_libraries(StudentDataExtractor PRIVATE OpenXLSX::OpenXLSX)
+    target_link_libraries(workbook_inspector PRIVATE OpenXLSX::OpenXLSX)
 endif()
 
 if(WIN32)

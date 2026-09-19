@@ -43,13 +43,19 @@ std::string normalizeHeaderName(const std::string& value) {
     std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char ch) {
         return static_cast<char>(std::tolower(ch));
     });
+
     std::string cleaned;
+    cleaned.reserve(normalized.size());
     for (char ch : normalized) {
-        if (std::isalnum(static_cast<unsigned char>(ch)) || ch == ' ' || ch == '_' || ch == '.' || ch == '-') {
+        if (std::isalnum(static_cast<unsigned char>(ch))) {
             cleaned += ch;
+        } else if (ch == ' ' || ch == '_' || ch == '-' || ch == '.' || ch == '/' || ch == '\\' || ch == '#') {
+            // Ignore punctuation and spacing differences when comparing headers.
+            continue;
         }
     }
-    return cleaned;
+
+    return trim(cleaned);
 }
 
 std::string valueToString(const std::string& value) {

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -17,9 +19,39 @@ namespace sde {
 
 namespace {
 
+std::string makeUniqueFieldName(const std::string& rawHeader, std::set<std::string>& usedNames, uint16_t columnIndex) {
+    std::string normalized = trim(rawHeader);
+    if (normalized.empty()) {
+        normalized = "Column " + std::to_string(columnIndex);
+    }
+
+    std::string candidate = normalized;
+    std::string sourceBase = normalized;
+    const bool reservedName = equalsIgnoreCase(normalized, "Subject") || equalsIgnoreCase(normalized, "Matric Number");
+    if (reservedName) {
+        sourceBase = normalized + " (source)";
+        candidate = sourceBase;
+    }
+
+    int suffix = 1;
+    while (usedNames.count(candidate) != 0 || equalsIgnoreCase(candidate, "Subject") || equalsIgnoreCase(candidate, "Matric Number")) {
+        std::ostringstream suffixStream;
+        if (reservedName) {
+            suffixStream << normalized << " (source " << (suffix + 1) << ")";
+        } else {
+            suffixStream << normalized << " (" << (suffix + 1) << ")";
+        }
+        candidate = suffixStream.str();
+        ++suffix;
+    }
+
+    usedNames.insert(candidate);
+    return candidate;
+}
+
 std::string cellValueToString(const OpenXLSX::XLCell& cell) {
     try {
-        const OpenXLSX::XLCellValue value = cell.value();
+        const auto& value = cell.value();
         switch (value.type()) {
             case OpenXLSX::XLValueType::Empty:
                 return "";
@@ -27,8 +59,11 @@ std::string cellValueToString(const OpenXLSX::XLCell& cell) {
                 return value.get<bool>() ? "TRUE" : "FALSE";
             case OpenXLSX::XLValueType::Integer:
                 return std::to_string(value.get<int64_t>());
-            case OpenXLSX::XLValueType::Float:
-                return std::to_string(value.get<double>());
+            case OpenXLSX::XLValueType::Float: {
+                std::ostringstream stream;
+                stream << std::setprecision(std::numeric_limits<double>::max_digits10) << value.get<double>();
+                return stream.str();
+            }
             case OpenXLSX::XLValueType::String:
                 return value.get<const char*>();
             case OpenXLSX::XLValueType::Error:
@@ -90,59 +125,33 @@ WorkbookExtractionResult StudentExtractor::processWorkbook(const std::filesystem
             }
 
             const auto maxColumns = std::max<uint16_t>(sheet.columnCount(), 1);
-            std::map<int, std::string> headerMap;
-            std::vector<std::string> headerRow;
-            bool headerDetected = false;
+            std::vector<std::string> headerRowValues;
+            int headerRowIndex = -1;
             int matricColumn = -1;
 
             for (uint32_t row = 1; row <= sheet.rowCount(); ++row) {
-                auto rowValuesVector = rowValues(sheet, row, maxColumns);
-                if (row == 1) {
-                    headerRow = rowValuesVector;
-                }
-
+                const auto rowValuesVector = rowValues(sheet, row, maxColumns);
                 for (uint16_t col = 1; col <= maxColumns; ++col) {
-                    const auto headerName = (row == 1) ? rowValuesVector[col - 1] : "";
-                    if (row == 1 && ColumnMatcher::isMatricColumnName(headerName, aliases)) {
+                    const auto headerName = col <= rowValuesVector.size() ? trim(rowValuesVector[col - 1]) : "";
+                    if (ColumnMatcher::isMatricColumnName(headerName, aliases)) {
+                        headerRowIndex = static_cast<int>(row);
                         matricColumn = static_cast<int>(col);
-                        headerDetected = true;
+                        headerRowValues = rowValuesVector;
                         break;
                     }
                 }
-
-                if (headerDetected) {
+                if (headerRowIndex != -1) {
                     break;
                 }
             }
 
-            for (uint32_t row = 1; row <= sheet.rowCount(); ++row) {
+            if (headerRowIndex == -1) {
+                continue;
+            }
+
+            for (uint32_t row = static_cast<uint32_t>(headerRowIndex + 1); row <= sheet.rowCount(); ++row) {
                 const auto currentRow = rowValues(sheet, row, maxColumns);
                 if (currentRow.empty()) {
-                    continue;
-                }
-
-                if (row == 1) {
-                    std::vector<std::string> headerNames = currentRow;
-                    for (uint16_t col = 1; col <= maxColumns; ++col) {
-                        const auto name = col <= headerNames.size() ? trim(headerNames[col - 1]) : "";
-                        if (!name.empty()) {
-                            headerMap[static_cast<int>(col)] = name;
-                        }
-                    }
-                    continue;
-                }
-
-                if (matricColumn == -1) {
-                    for (uint16_t col = 1; col <= maxColumns; ++col) {
-                        const auto value = col <= currentRow.size() ? trim(currentRow[col - 1]) : "";
-                        if (ColumnMatcher::matchesMatricValue(value, targetMatricNumber_)) {
-                            matricColumn = static_cast<int>(col);
-                            break;
-                        }
-                    }
-                }
-
-                if (matricColumn == -1) {
                     continue;
                 }
 
@@ -157,22 +166,37 @@ WorkbookExtractionResult StudentExtractor::processWorkbook(const std::filesystem
                 record.subject = subject;
                 record.sourceFile = workbookPath.string();
                 record.matched = true;
+                std::set<std::string> usedFieldNames;
 
                 for (uint16_t col = 1; col <= maxColumns; ++col) {
-                    const auto key = (col <= currentRow.size()) ? trim(currentRow[col - 1]) : "";
-                    const auto columnName = headerMap.count(static_cast<int>(col)) ? headerMap[static_cast<int>(col)] : "Column " + std::to_string(col);
-                    const auto normalizedValue = (col <= currentRow.size()) ? currentRow[col - 1] : "";
-                    if (!columnName.empty() && !normalizedValue.empty()) {
-                        record.fields[columnName] = normalizedValue;
+                    const auto columnName = col <= headerRowValues.size() ? trim(headerRowValues[col - 1]) : "";
+                    const auto normalizedValue = (col <= currentRow.size()) ? trim(currentRow[col - 1]) : "";
+                    if (normalizedValue.empty()) {
+                        continue;
                     }
+
+                    std::string fieldName = columnName;
+                    if (fieldName.empty()) {
+                        fieldName = "Column " + std::to_string(col);
+                    }
+
+                    if (ColumnMatcher::isMatricColumnName(fieldName, aliases)) {
+                        continue;
+                    }
+                    if (equalsIgnoreCase(fieldName, "S/NO") || equalsIgnoreCase(fieldName, "SN") || equalsIgnoreCase(fieldName, "SERIAL NO")) {
+                        continue;
+                    }
+
+                    const auto uniqueKey = makeUniqueFieldName(fieldName, usedFieldNames, col);
+                    record.fields[uniqueKey] = normalizedValue;
                 }
 
-                if (record.fields.empty()) {
+                if (record.fields.count("Subject") == 0) {
+                    record.fields["Subject"] = subject;
+                }
+                if (record.fields.count("Matric Number") == 0) {
                     record.fields["Matric Number"] = matricValue;
                 }
-
-                record.fields["Subject"] = subject;
-                record.fields["Matric Number"] = matricValue;
                 result.records.push_back(record);
                 ++result.matches;
             }
