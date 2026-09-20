@@ -69,6 +69,39 @@ if(WIN32)
     endif()
 endif()
 
+if(WIN32)
+    install(TARGETS StudentDataExtractorGui
+        RUNTIME DESTINATION .
+        COMPONENT Application
+    )
+
+    install(FILES
+        "${CMAKE_BINARY_DIR}/output/libOpenXLSX.dll"
+        "${MINGW_BIN_DIR}/libstdc++-6.dll"
+        "${MINGW_BIN_DIR}/libgcc_s_seh-1.dll"
+        DESTINATION .
+        COMPONENT Application
+    )
+
+    set(CPACK_PACKAGE_NAME "StudentDataExtractor")
+    set(CPACK_PACKAGE_VENDOR "Student Data Extractor")
+    set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Student Data Extractor desktop application")
+    set(CPACK_PACKAGE_VERSION "1.0.0")
+    set(CPACK_PACKAGE_INSTALL_DIRECTORY "Student Data Extractor")
+    set(CPACK_PACKAGE_FILE_NAME "StudentDataExtractor-Setup")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
+    set(CPACK_NSIS_DISPLAY_NAME "Student Data Extractor")
+    set(CPACK_NSIS_PACKAGE_NAME "Student Data Extractor")
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+    set(CPACK_NSIS_MENU_LINKS
+        "StudentDataExtractorGui.exe" "Student Data Extractor"
+    )
+    set(CPACK_CREATE_DESKTOP_LINKS StudentDataExtractorGui)
+    set(CPACK_COMPONENTS_ALL Application)
+    set(CPACK_GENERATOR "NSIS")
+    include(CPack)
+endif()
+
 target_include_directories(StudentDataExtractor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )

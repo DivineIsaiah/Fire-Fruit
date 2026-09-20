@@ -1,6 +1,7 @@
 #include "app/Application.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -83,11 +84,21 @@ std::filesystem::path Application::resolveOutputsRoot() const {
         }
         current = parent;
     }
+    const char* localAppData = std::getenv("LOCALAPPDATA");
+    if (localAppData != nullptr && *localAppData != '\0' &&
+        !std::filesystem::exists(appRoot / "CMakeLists.txt")) {
+        return std::filesystem::path(localAppData) / "StudentDataExtractor" / "OUTPUTS";
+    }
     return expected;
 }
 
 std::filesystem::path Application::resolveLogsRoot() const {
     std::filesystem::path appRoot = resolveApplicationRoot();
+    const char* localAppData = std::getenv("LOCALAPPDATA");
+    if (localAppData != nullptr && *localAppData != '\0' &&
+        !std::filesystem::exists(appRoot / "CMakeLists.txt")) {
+        return std::filesystem::path(localAppData) / "StudentDataExtractor" / "logs";
+    }
     return appRoot / "logs";
 }
 
@@ -200,22 +211,30 @@ ExtractionNotification Application::extractStudent(const std::filesystem::path& 
 
     StudentExtractor extractor(config_, matricNumber);
     for (const auto& file : files) {
-        auto fileResult = extractor.processWorkbook(file);
-        result.records.insert(result.records.end(), fileResult.records.begin(), fileResult.records.end());
-        result.warnings.insert(result.warnings.end(), fileResult.warnings.begin(), fileResult.warnings.end());
-        result.errors.insert(result.errors.end(), fileResult.errors.begin(), fileResult.errors.end());
-        result.matches += fileResult.matches;
-        result.noMatch += fileResult.noMatch;
-        if (!fileResult.errors.empty()) {
-            ++result.processed;
+        try {
+            auto fileResult = extractor.processWorkbook(file);
+            result.records.insert(result.records.end(), fileResult.records.begin(), fileResult.records.end());
+            result.warnings.insert(result.warnings.end(), fileResult.warnings.begin(), fileResult.warnings.end());
+            result.errors.insert(result.errors.end(), fileResult.errors.begin(), fileResult.errors.end());
+            result.matches += fileResult.matches;
+            result.noMatch += fileResult.noMatch;
+        } catch (const std::exception& ex) {
+            result.errors.push_back({file.string(), ex.what()});
+            logger_.log("Workbook processing failed: " + file.string() + " - " + ex.what());
         }
     }
 
     if (!result.records.empty()) {
-        ExcelWriter writer(config_.outputsRoot);
-        auto outputFile = writer.writeWorkbook(result.records, matricNumber);
-        result.outputPath = outputFile.string();
-        logger_.log("Output generated: " + outputFile.string());
+        try {
+            logger_.log("Writing output workbook to: " + config_.outputsRoot.string());
+            ExcelWriter writer(config_.outputsRoot);
+            auto outputFile = writer.writeWorkbook(result.records, matricNumber);
+            result.outputPath = outputFile.string();
+            logger_.log("Output generated: " + outputFile.string());
+        } catch (const std::exception& ex) {
+            result.errors.push_back({config_.outputsRoot.string(), ex.what()});
+            logger_.log("Output generation failed: " + std::string(ex.what()));
+        }
     }
 
     result.processed = static_cast<int>(files.size());

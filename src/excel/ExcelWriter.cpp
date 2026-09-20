@@ -38,6 +38,12 @@ std::filesystem::path ExcelWriter::writeWorkbook(const std::vector<StudentRecord
     std::ostringstream filename;
     filename << "extraction_" << (safeMatric.empty() ? "student" : safeMatric) << "_" << std::put_time(&localTime, "%Y%m%d_%H%M%S") << ".xlsx";
     std::filesystem::path outputPath = outputDirectory_ / filename.str();
+    int duplicateIndex = 1;
+    while (std::filesystem::exists(outputPath)) {
+        outputPath = outputDirectory_ /
+            (filename.str().substr(0, filename.str().size() - 5) + "_" +
+             std::to_string(duplicateIndex++) + ".xlsx");
+    }
 
     OpenXLSX::XLDocument doc;
     doc.create(outputPath.string());
