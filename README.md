@@ -1,6 +1,6 @@
 # Student Data Extractor
 
-A local Windows CLI application for searching academic Excel files by matriculation number and exporting consolidated results to a new workbook.
+A Windows desktop application for searching academic Excel files by matriculation number and exporting consolidated results to a new workbook. A command-line interface is also available for development and scripted use.
 
 ## Features
 
@@ -12,15 +12,39 @@ A local Windows CLI application for searching academic Excel files by matriculat
 - Combine records into a consolidated workbook in `OUTPUTS`
 - Continue processing even if some files are unreadable
 - Log session details for debugging
+- Native Windows desktop GUI
+- Remembers the selected Results folder between launches
+- Includes a self-contained Windows installer
 
-## Requirements
+## Installing For Windows Users
+
+Download and run:
+
+```text
+StudentDataExtractor-Setup.exe
+```
+
+The installer includes the application runtime and creates a Start Menu shortcut for **Student Data Extractor**. No Git, CMake, MinGW, Visual Studio, OpenXLSX, or other development tools are required.
+
+After installation:
+
+1. Open **Student Data Extractor** from the Start Menu.
+2. Select the folder containing the academic result workbooks.
+3. Select an academic session.
+4. Enter the student's matriculation number.
+5. Click **Search**.
+6. Click **Open Result** when extraction completes.
+
+The application displays progress, matching summaries, processing errors, and no-match results in the window. Generated workbooks are saved in the user's application data folder and can be opened directly with **Open Result**.
+
+## Developer Requirements
 
 - Windows 10/11
 - CMake 3.16+
 - C++20 compatible compiler (MSVC or MinGW/GCC)
 - OpenXLSX library for reading/writing Excel files
 
-## Building
+## Building From Source
 
 From PowerShell:
 
@@ -37,12 +61,20 @@ cmake -S . -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
 ```
 
-## Running
+## Running The CLI
 
 ```powershell
 cd C:\path\to\StudentDataExtractor
 .\build\StudentDataExtractor.exe
 ```
+
+To launch the GUI from a source build:
+
+```powershell
+.\build\StudentDataExtractorGui.exe
+```
+
+The GUI is the recommended interface for normal Windows users. The CLI remains available for development and troubleshooting.
 
 ## Project structure
 
@@ -56,7 +88,7 @@ StudentDataExtractor/
 │   ├── excel/
 │   ├── extraction/
 │   ├── models/
-│   ├── ui/
+│   ├── gui/
 │   ├── utils/
 │   └── main.cpp
 ├── tests/
@@ -66,7 +98,7 @@ StudentDataExtractor/
 └── build/
 ```
 
-## How to use
+## CLI Usage
 
 1. Place all source Excel files under `RESULTS/` in any nested folder structure.
 2. Run the app from PowerShell.
@@ -75,22 +107,36 @@ StudentDataExtractor/
 5. Wait for the extraction to complete.
 6. The consolidated workbook is written to `OUTPUTS/`.
 
+## GUI Usage
+
+The GUI discovers academic-session folders directly inside the selected Results folder. It validates the folder, session, and matriculation number before enabling **Search**. Extraction runs in the background so the window remains responsive.
+
+The GUI reports:
+
+- Files checked
+- Matching files
+- Records extracted
+- Files with no match
+- Files with errors
+- The generated result filename
+
+The selected Results folder is stored in the user's local Windows application data and restored on the next launch if it still exists.
+
 ## Notes
 
-- The generated workbook is always written under an application-managed `OUTPUTS` directory.
+- The CLI writes generated workbooks under the application-managed `OUTPUTS` directory. Installed GUI builds use the user's local application data directory.
 - The app ignores output files during input traversal.
 - It treats empty workbook cells as empty values rather than `0`.
 - Duplicate matching rows are preserved as separate output rows with a warning.
 
 ## Limitations
 
-- Version 1 focuses on `.xlsx` files.
+- The application focuses on `.xlsx` files.
 - Complex column normalization is intentionally minimal.
 - The app supports local file processing only.
 
-## Future improvements
+## Future Improvements
 
-- GUI front end
 - CSV support
 - Better header normalization
 - CSV export option
