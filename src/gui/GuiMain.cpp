@@ -4,11 +4,13 @@
 #include <shellapi.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "utils/Logger.h"
 #include "app/Application.h"
 
 namespace {
@@ -36,28 +38,75 @@ std::wstring g_outputPath;
 bool g_extractionRunning = false;
 
 void setControlFont(HWND control) {
-    SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(g_font), TRUE);
+    SendMessageW(
+        control,
+        WM_SETFONT,
+        reinterpret_cast<WPARAM>(g_font),
+        TRUE
+    );
 }
 
 void setStatus(const wchar_t* message) {
     SetWindowTextW(g_statusLabel, message);
 }
 
+std::filesystem::path defaultResultsFolder() {
+#ifdef _WIN32
+    const char* localAppData = std::getenv("LOCALAPPDATA");
+
+    if (localAppData != nullptr && *localAppData != '\0') {
+        return std::filesystem::path(localAppData)
+            / "StudentDataExtractor"
+            / "RESULTS";
+    }
+#endif
+
+    return std::filesystem::absolute(
+        std::filesystem::current_path() / "RESULTS"
+    );
+}
+
 std::wstring selectedSessionName() {
-    const auto selectedIndex = SendMessageW(g_sessionCombo, CB_GETCURSEL, 0, 0);
+    const auto selectedIndex =
+        SendMessageW(
+            g_sessionCombo,
+            CB_GETCURSEL,
+            0,
+            0
+        );
+
     if (selectedIndex == CB_ERR) {
         return {};
     }
 
-    const auto length = SendMessageW(g_sessionCombo, CB_GETLBTEXTLEN, selectedIndex, 0);
+    const auto length =
+        SendMessageW(
+            g_sessionCombo,
+            CB_GETLBTEXTLEN,
+            selectedIndex,
+            0
+        );
+
     if (length == CB_ERR) {
         return {};
     }
 
-    std::wstring session(static_cast<size_t>(length) + 1, L'\0');
-    SendMessageW(g_sessionCombo, CB_GETLBTEXT, selectedIndex,
-                 reinterpret_cast<LPARAM>(session.data()));
-    session.resize(static_cast<size_t>(length));
+    std::wstring session(
+        static_cast<size_t>(length) + 1,
+        L'\0'
+    );
+
+    SendMessageW(
+        g_sessionCombo,
+        CB_GETLBTEXT,
+        selectedIndex,
+        reinterpret_cast<LPARAM>(session.data())
+    );
+
+    session.resize(
+        static_cast<size_t>(length)
+    );
+
     return session;
 }
 
@@ -71,99 +120,238 @@ std::string wideToUtf8(const std::wstring& value) {
     if (value.empty()) {
         return {};
     }
-    const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(),
-                                         static_cast<int>(value.size()),
-                                         nullptr, 0, nullptr, nullptr);
-    std::string result(static_cast<size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value.data(),
-                        static_cast<int>(value.size()), result.data(), size,
-                        nullptr, nullptr);
+
+    const int size =
+        WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            value.data(),
+            static_cast<int>(value.size()),
+            nullptr,
+            0,
+            nullptr,
+            nullptr
+        );
+
+    std::string result(
+        static_cast<size_t>(size),
+        '\0'
+    );
+
+    WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        size,
+        nullptr,
+        nullptr
+    );
+
     return result;
 }
 
-void populateSessions(const std::filesystem::path& resultsFolder) {
-    SendMessageW(g_sessionCombo, CB_RESETCONTENT, 0, 0);
+void populateSessions(
+    const std::filesystem::path& resultsFolder
+) {
+    SendMessageW(
+        g_sessionCombo,
+        CB_RESETCONTENT,
+        0,
+        0
+    );
 
     if (!std::filesystem::is_directory(resultsFolder)) {
-        SendMessageW(g_sessionCombo, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L"No folder selected"));
-        SendMessageW(g_sessionCombo, CB_SETCURSEL, 0, 0);
+        SendMessageW(
+            g_sessionCombo,
+            CB_ADDSTRING,
+            0,
+            reinterpret_cast<LPARAM>(
+                L"No folder selected"
+            )
+        );
+
+        SendMessageW(
+            g_sessionCombo,
+            CB_SETCURSEL,
+            0,
+            0
+        );
+
         return;
     }
 
     std::vector<std::wstring> sessions;
     std::error_code error;
-    for (const auto& entry : std::filesystem::directory_iterator(resultsFolder, error)) {
+
+    for (
+        const auto& entry :
+        std::filesystem::directory_iterator(
+            resultsFolder,
+            error
+        )
+    ) {
         if (entry.is_directory(error)) {
-            sessions.push_back(entry.path().filename().wstring());
+            sessions.push_back(
+                entry.path().filename().wstring()
+            );
         }
     }
-    std::sort(sessions.begin(), sessions.end());
+
+    std::sort(
+        sessions.begin(),
+        sessions.end()
+    );
 
     for (const auto& session : sessions) {
-        SendMessageW(g_sessionCombo, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(session.c_str()));
+        SendMessageW(
+            g_sessionCombo,
+            CB_ADDSTRING,
+            0,
+            reinterpret_cast<LPARAM>(
+                session.c_str()
+            )
+        );
     }
 
     if (sessions.empty()) {
-        SendMessageW(g_sessionCombo, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L"No sessions found"));
+        SendMessageW(
+            g_sessionCombo,
+            CB_ADDSTRING,
+            0,
+            reinterpret_cast<LPARAM>(
+                L"No sessions found"
+            )
+        );
     }
-    SendMessageW(g_sessionCombo, CB_SETCURSEL, 0, 0);
+
+    SendMessageW(
+        g_sessionCombo,
+        CB_SETCURSEL,
+        0,
+        0
+    );
 }
 
 std::filesystem::path chooseFolder(HWND owner) {
     BROWSEINFOW browseInfo{};
-    browseInfo.hwndOwner = owner;
-    browseInfo.lpszTitle = L"Select the Results folder";
-    browseInfo.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
 
-    PIDLIST_ABSOLUTE item = SHBrowseForFolderW(&browseInfo);
+    browseInfo.hwndOwner = owner;
+    browseInfo.lpszTitle =
+        L"Select the Results folder";
+    browseInfo.ulFlags =
+        BIF_RETURNONLYFSDIRS |
+        BIF_NEWDIALOGSTYLE;
+
+    PIDLIST_ABSOLUTE item =
+        SHBrowseForFolderW(
+            &browseInfo
+        );
+
     if (item == nullptr) {
         return {};
     }
 
     wchar_t selectedPath[MAX_PATH]{};
-    const bool resolved = SHGetPathFromIDListW(item, selectedPath) != FALSE;
+
+    const bool resolved =
+        SHGetPathFromIDListW(
+            item,
+            selectedPath
+        ) != FALSE;
+
     CoTaskMemFree(item);
-    return resolved ? std::filesystem::path(selectedPath) : std::filesystem::path{};
+
+    return resolved
+        ? std::filesystem::path(selectedPath)
+        : std::filesystem::path{};
 }
 
 void browseForResults(HWND window) {
-    const auto selectedFolder = chooseFolder(window);
+    const auto selectedFolder =
+        chooseFolder(window);
+
     if (selectedFolder.empty()) {
         return;
     }
 
-    const auto pathText = selectedFolder.wstring();
-    SetWindowTextW(g_resultsPath, pathText.c_str());
-    populateSessions(selectedFolder);
+    const auto pathText =
+        selectedFolder.wstring();
+
+    SetWindowTextW(
+        g_resultsPath,
+        pathText.c_str()
+    );
+
+    populateSessions(
+        selectedFolder
+    );
+
     setStatus(L"Ready");
-    SetWindowTextW(g_summaryLabel,
-                   L"Choose a session and enter a matric number to begin.");
+
+    SetWindowTextW(
+        g_summaryLabel,
+        L"Choose a session and enter a matric number to begin."
+    );
 }
 
 void handleSearch(HWND window) {
     wchar_t resultsPath[MAX_PATH]{};
     wchar_t matricNumber[256]{};
-    GetWindowTextW(g_resultsPath, resultsPath, MAX_PATH);
-    GetWindowTextW(g_matricInput, matricNumber, 256);
+
+    GetWindowTextW(
+        g_resultsPath,
+        resultsPath,
+        MAX_PATH
+    );
+
+    GetWindowTextW(
+        g_matricInput,
+        matricNumber,
+        256
+    );
 
     if (wcslen(resultsPath) == 0) {
         setStatus(L"Error");
-        SetWindowTextW(g_summaryLabel, L"Please select a Results folder.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"Please select a Results folder."
+        );
+
         return;
     }
-    const auto sessionName = selectedSessionName();
-    const auto sessionPath = std::filesystem::path(resultsPath) / sessionName;
-    if (sessionName.empty() || !std::filesystem::is_directory(sessionPath)) {
+
+    const auto sessionName =
+        selectedSessionName();
+
+    const auto sessionPath =
+        std::filesystem::path(resultsPath)
+        / sessionName;
+
+    if (
+        sessionName.empty() ||
+        !std::filesystem::is_directory(sessionPath)
+    ) {
         setStatus(L"Error");
-        SetWindowTextW(g_summaryLabel, L"Please select an academic session.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"Please select an academic session."
+        );
+
         return;
     }
+
     if (wcslen(matricNumber) == 0) {
         setStatus(L"Error");
-        SetWindowTextW(g_summaryLabel, L"Please enter a matric number.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"Please enter a matric number."
+        );
+
         return;
     }
 
@@ -173,65 +361,163 @@ void handleSearch(HWND window) {
 
     g_extractionRunning = true;
     g_outputPath.clear();
-    EnableWindow(g_openResultButton, FALSE);
+
+    EnableWindow(
+        g_openResultButton,
+        FALSE
+    );
+
     enableSearch(false);
+
     setStatus(L"Searching...");
-    SetWindowTextW(g_summaryLabel, L"Searching workbooks. Please wait...");
 
-    const auto matric = std::wstring(matricNumber);
-    g_extractionWorker = std::thread([window, sessionPath, matric]() {
-        auto* completion = new std::pair<bool, sde::ExtractionNotification>{};
-        try {
-            sde::Application application;
-            completion->second = application.extractStudent(sessionPath, wideToUtf8(matric));
-            completion->first = true;
-        } catch (const std::exception&) {
-            completion->first = false;
-        }
+    SetWindowTextW(
+        g_summaryLabel,
+        L"Searching workbooks. Please wait..."
+    );
 
-        if (!PostMessageW(window, kExtractionComplete,
-                          0, reinterpret_cast<LPARAM>(completion))) {
-            delete completion;
-        }
-    });
+    const auto matric =
+        std::wstring(matricNumber);
+
+    g_extractionWorker =
+        std::thread(
+            [window, sessionPath, matric]() {
+
+                auto* completion =
+                    new std::pair<
+                        bool,
+                        sde::ExtractionNotification
+                    >{};
+
+                try {
+                    sde::Application application;
+
+                    completion->second =
+                        application.extractStudent(
+                            sessionPath,
+                            wideToUtf8(matric)
+                        );
+
+                    completion->first = true;
+                }
+
+                catch (const std::exception& ex) {
+                    completion->first = false;
+
+                    sde::Logger logger(
+                        std::filesystem::path(std::getenv("LOCALAPPDATA"))
+                        / "StudentDataExtractor"
+                        / "logs"
+                    );
+
+                    logger.log(
+                        "GUI extraction std::exception: " +
+                        std::string(ex.what())
+                    );
+                }
+                catch (...) {
+                    completion->first = false;
+
+                    sde::Logger logger(
+                        std::filesystem::path(std::getenv("LOCALAPPDATA"))
+                        / "StudentDataExtractor"
+                        / "logs"
+                    );
+
+                    logger.log(
+                        "GUI extraction UNKNOWN EXCEPTION."
+                    );
+                }
+
+                if (
+                    !PostMessageW(
+                        window,
+                        kExtractionComplete,
+                        0,
+                        reinterpret_cast<LPARAM>(
+                            completion
+                        )
+                    )
+                ) {
+                    delete completion;
+                }
+            }
+        );
 }
 
-void showExtractionResult(std::pair<bool, sde::ExtractionNotification>* completion) {
+void showExtractionResult(
+    std::pair<
+        bool,
+        sde::ExtractionNotification
+    >* completion
+) {
     if (g_extractionWorker.joinable()) {
         g_extractionWorker.join();
     }
+
     g_extractionRunning = false;
+
     enableSearch(true);
 
     if (!completion->first) {
         setStatus(L"Error");
-        SetWindowTextW(g_summaryLabel,
-                       L"Extraction could not be completed. Check the log for details.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"Extraction could not be completed. Check the log for details."
+        );
+
         delete completion;
         return;
     }
 
-    const auto& result = completion->second;
+    const auto& result =
+        completion->second;
+
     if (result.records.empty()) {
         setStatus(L"Completed");
-        SetWindowTextW(g_summaryLabel, L"No matching records were found.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"No matching records were found."
+        );
+
         delete completion;
         return;
     }
 
     setStatus(L"Completed");
-    const auto summary = L"Extraction Complete\r\n"
-        L"Workbooks checked: " + std::to_wstring(result.processed) +
-        L"\r\nMatching records: " + std::to_wstring(result.matches) +
-        L"\r\nRecords extracted: " + std::to_wstring(result.records.size()) +
-        L"\r\nFiles with no match: " + std::to_wstring(result.noMatch) +
-        L"\r\nFiles with errors: " + std::to_wstring(result.errors.size());
-    SetWindowTextW(g_summaryLabel, summary.c_str());
+
+    const auto summary =
+        L"Extraction Complete\r\n"
+        L"Workbooks checked: " +
+        std::to_wstring(result.processed) +
+        L"\r\nMatching records: " +
+        std::to_wstring(result.matches) +
+        L"\r\nRecords extracted: " +
+        std::to_wstring(result.records.size()) +
+        L"\r\nFiles with no match: " +
+        std::to_wstring(result.noMatch) +
+        L"\r\nFiles with errors: " +
+        std::to_wstring(result.errors.size());
+
+    SetWindowTextW(
+        g_summaryLabel,
+        summary.c_str()
+    );
 
     if (!result.outputPath.empty()) {
-        g_outputPath = std::filesystem::path(result.outputPath).wstring();
-        EnableWindow(g_openResultButton, TRUE);
+        g_outputPath =
+            std::filesystem::path(
+                result.outputPath
+            ).wstring();
+
+        EnableWindow(
+            g_openResultButton,
+            TRUE
+        );
     }
+
     delete completion;
 }
 
@@ -239,163 +525,522 @@ void openResult() {
     if (g_outputPath.empty()) {
         return;
     }
-    const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(
-        nullptr, L"open", g_outputPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+
+    const auto result =
+        reinterpret_cast<INT_PTR>(
+            ShellExecuteW(
+                nullptr,
+                L"open",
+                g_outputPath.c_str(),
+                nullptr,
+                nullptr,
+                SW_SHOWNORMAL
+            )
+        );
+
     if (result <= 32) {
         setStatus(L"Error");
-        SetWindowTextW(g_summaryLabel, L"The result file could not be opened.");
+
+        SetWindowTextW(
+            g_summaryLabel,
+            L"The result file could not be opened."
+        );
     }
 }
 
-HWND createLabel(HWND parent, const wchar_t* text, int x, int y, int width, int height) {
-    HWND label = CreateWindowW(L"STATIC", text, WS_CHILD | WS_VISIBLE,
-                               x, y, width, height, parent, nullptr,
-                               GetModuleHandleW(nullptr), nullptr);
+HWND createLabel(
+    HWND parent,
+    const wchar_t* text,
+    int x,
+    int y,
+    int width,
+    int height
+) {
+    HWND label =
+        CreateWindowW(
+            L"STATIC",
+            text,
+            WS_CHILD | WS_VISIBLE,
+            x,
+            y,
+            width,
+            height,
+            parent,
+            nullptr,
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(label);
+
     return label;
 }
 
-HWND createEdit(HWND parent, int id, int x, int y, int width, int height, DWORD style) {
-    HWND edit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                                WS_CHILD | WS_VISIBLE | style,
-                                x, y, width, height, parent,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-                                GetModuleHandleW(nullptr), nullptr);
+HWND createEdit(
+    HWND parent,
+    int id,
+    int x,
+    int y,
+    int width,
+    int height,
+    DWORD style
+) {
+    HWND edit =
+        CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            L"EDIT",
+            L"",
+            WS_CHILD | WS_VISIBLE | style,
+            x,
+            y,
+            width,
+            height,
+            parent,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(id)
+            ),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(edit);
+
     return edit;
 }
 
 void createControls(HWND window) {
-    createLabel(window, L"Results Folder", 24, 24, 140, 24);
-    g_resultsPath = createEdit(window, kResultsPath, 24, 50, 470, 30,
-                               ES_AUTOHSCROLL | ES_READONLY);
-    HWND browse = CreateWindowW(L"BUTTON", L"Browse...",
-                                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-                                504, 50, 100, 30, window,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kBrowseButton)),
-                                GetModuleHandleW(nullptr), nullptr);
+    createLabel(
+        window,
+        L"Results Folder",
+        24,
+        24,
+        140,
+        24
+    );
+
+    g_resultsPath =
+        createEdit(
+            window,
+            kResultsPath,
+            24,
+            50,
+            470,
+            30,
+            ES_AUTOHSCROLL | ES_READONLY
+        );
+
+    const auto defaultFolder =
+        defaultResultsFolder();
+
+    const auto defaultFolderText =
+        defaultFolder.wstring();
+
+    SetWindowTextW(
+        g_resultsPath,
+        defaultFolderText.c_str()
+    );
+
+    HWND browse =
+        CreateWindowW(
+            L"BUTTON",
+            L"Browse...",
+            WS_CHILD |
+                WS_VISIBLE |
+                BS_PUSHBUTTON,
+            504,
+            50,
+            100,
+            30,
+            window,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(
+                    kBrowseButton
+                )
+            ),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(browse);
 
-    createLabel(window, L"Academic Session", 24, 96, 160, 24);
-    g_sessionCombo = CreateWindowW(WC_COMBOBOXW, L"",
-                                   WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST,
-                                   24, 122, 280, 180, window,
-                                   reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSessionCombo)),
-                                   GetModuleHandleW(nullptr), nullptr);
+    createLabel(
+        window,
+        L"Academic Session",
+        24,
+        96,
+        160,
+        24
+    );
+
+    g_sessionCombo =
+        CreateWindowW(
+            WC_COMBOBOXW,
+            L"",
+            WS_CHILD |
+                WS_VISIBLE |
+                WS_TABSTOP |
+                CBS_DROPDOWNLIST,
+            24,
+            122,
+            280,
+            180,
+            window,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(
+                    kSessionCombo
+                )
+            ),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(g_sessionCombo);
-    SendMessageW(g_sessionCombo, CB_ADDSTRING, 0,
-                 reinterpret_cast<LPARAM>(L"No folder selected"));
-    SendMessageW(g_sessionCombo, CB_SETCURSEL, 0, 0);
 
-    createLabel(window, L"Matric Number", 24, 168, 160, 24);
-    g_matricInput = createEdit(window, kMatricInput, 24, 194, 280, 30,
-                               ES_AUTOHSCROLL | ES_LEFT);
-    SendMessageW(g_matricInput, EM_SETCUEBANNER, TRUE,
-                 reinterpret_cast<LPARAM>(L"Example: DE.2024/1755"));
+    populateSessions(
+        defaultFolder
+    );
 
-    g_searchButton = CreateWindowW(L"BUTTON", L"Search",
-                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-                                24, 244, 130, 36, window,
-                                reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSearchButton)),
-                                GetModuleHandleW(nullptr), nullptr);
+    createLabel(
+        window,
+        L"Matric Number",
+        24,
+        168,
+        160,
+        24
+    );
+
+    g_matricInput =
+        createEdit(
+            window,
+            kMatricInput,
+            24,
+            194,
+            280,
+            30,
+            ES_AUTOHSCROLL | ES_LEFT
+        );
+
+    SendMessageW(
+        g_matricInput,
+        EM_SETCUEBANNER,
+        TRUE,
+        reinterpret_cast<LPARAM>(
+            L"Example: DE.2024/1755"
+        )
+    );
+
+    g_searchButton =
+        CreateWindowW(
+            L"BUTTON",
+            L"Search",
+            WS_CHILD |
+                WS_VISIBLE |
+                WS_TABSTOP |
+                BS_DEFPUSHBUTTON,
+            24,
+            244,
+            130,
+            36,
+            window,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(
+                    kSearchButton
+                )
+            ),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(g_searchButton);
 
-    createLabel(window, L"Status", 24, 310, 100, 24);
-    g_statusLabel = createLabel(window, L"Ready", 120, 310, 180, 24);
-    createLabel(window, L"Results Summary", 24, 350, 180, 24);
-    g_summaryLabel = createLabel(window,
-                                 L"Choose a Results folder to discover sessions.",
-                                 24, 378, 580, 48);
+    createLabel(
+        window,
+        L"Status",
+        24,
+        310,
+        100,
+        24
+    );
 
-    g_openResultButton = CreateWindowW(L"BUTTON", L"Open Result",
-                                    WS_CHILD | WS_VISIBLE | WS_DISABLED | BS_PUSHBUTTON,
-                                    24, 442, 130, 34, window,
-                                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(kOpenResultButton)),
-                                    GetModuleHandleW(nullptr), nullptr);
+    g_statusLabel =
+        createLabel(
+            window,
+            L"Ready",
+            120,
+            310,
+            180,
+            24
+        );
+
+    createLabel(
+        window,
+        L"Results Summary",
+        24,
+        350,
+        180,
+        24
+    );
+
+    g_summaryLabel =
+        createLabel(
+            window,
+            L"Choose a session and enter a matric number to begin.",
+            24,
+            378,
+            580,
+            48
+        );
+
+    g_openResultButton =
+        CreateWindowW(
+            L"BUTTON",
+            L"Open Result",
+            WS_CHILD |
+                WS_VISIBLE |
+                WS_DISABLED |
+                BS_PUSHBUTTON,
+            24,
+            442,
+            130,
+            34,
+            window,
+            reinterpret_cast<HMENU>(
+                static_cast<INT_PTR>(
+                    kOpenResultButton
+                )
+            ),
+            GetModuleHandleW(nullptr),
+            nullptr
+        );
+
     setControlFont(g_openResultButton);
 }
 
 void resizeControls(HWND window) {
     RECT client{};
-    GetClientRect(window, &client);
-    const int width = std::max(640, static_cast<int>(client.right - client.left));
-    MoveWindow(g_resultsPath, 24, 50, width - 160, 30, TRUE);
-    MoveWindow(GetDlgItem(window, kBrowseButton), width - 130, 50, 106, 30, TRUE);
-    MoveWindow(g_summaryLabel, 24, 378, width - 48, 48, TRUE);
+
+    GetClientRect(
+        window,
+        &client
+    );
+
+    const int width =
+        std::max(
+            640,
+            static_cast<int>(
+                client.right -
+                client.left
+            )
+        );
+
+    MoveWindow(
+        g_resultsPath,
+        24,
+        50,
+        width - 160,
+        30,
+        TRUE
+    );
+
+    MoveWindow(
+        GetDlgItem(
+            window,
+            kBrowseButton
+        ),
+        width - 130,
+        50,
+        106,
+        30,
+        TRUE
+    );
+
+    MoveWindow(
+        g_summaryLabel,
+        24,
+        378,
+        width - 48,
+        48,
+        TRUE
+    );
 }
 
-LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK windowProcedure(
+    HWND window,
+    UINT message,
+    WPARAM wParam,
+    LPARAM lParam
+) {
     switch (message) {
+
     case WM_CREATE:
         createControls(window);
         return 0;
+
     case WM_SIZE:
         resizeControls(window);
         return 0;
+
     case WM_COMMAND:
+
         if (LOWORD(wParam) == kBrowseButton) {
             browseForResults(window);
-        } else if (LOWORD(wParam) == kSearchButton) {
+        }
+        else if (LOWORD(wParam) == kSearchButton) {
             handleSearch(window);
-        } else if (LOWORD(wParam) == kOpenResultButton) {
+        }
+        else if (LOWORD(wParam) == kOpenResultButton) {
             openResult();
         }
+
         return 0;
+
     case kExtractionComplete:
-        showExtractionResult(reinterpret_cast<std::pair<bool, sde::ExtractionNotification>*>(lParam));
+        showExtractionResult(
+            reinterpret_cast<
+                std::pair<
+                    bool,
+                    sde::ExtractionNotification
+                >*
+            >(lParam)
+        );
         return 0;
+
     case WM_DESTROY:
+
         if (g_extractionWorker.joinable()) {
             g_extractionWorker.join();
         }
+
         DeleteObject(g_font);
         PostQuitMessage(0);
+
         return 0;
+
     default:
-        return DefWindowProcW(window, message, wParam, lParam);
+        return DefWindowProcW(
+            window,
+            message,
+            wParam,
+            lParam
+        );
     }
 }
 
 } // namespace
 
-int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
-    INITCOMMONCONTROLSEX commonControls{sizeof(INITCOMMONCONTROLSEX), ICC_STANDARD_CLASSES};
-    InitCommonControlsEx(&commonControls);
-    CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+int WINAPI WinMain(
+    HINSTANCE instance,
+    HINSTANCE,
+    LPSTR,
+    int showCommand
+) {
+    INITCOMMONCONTROLSEX commonControls{
+        sizeof(INITCOMMONCONTROLSEX),
+        ICC_STANDARD_CLASSES
+    };
 
-    g_font = CreateFontW(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-                         L"Segoe UI");
+    InitCommonControlsEx(
+        &commonControls
+    );
 
-    const wchar_t className[] = L"StudentDataExtractorGuiWindow";
+    CoInitializeEx(
+        nullptr,
+        COINIT_APARTMENTTHREADED
+    );
+
+    g_font =
+        CreateFontW(
+            -18,
+            0,
+            0,
+            0,
+            FW_NORMAL,
+            FALSE,
+            FALSE,
+            FALSE,
+            DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS,
+            CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE,
+            L"Segoe UI"
+        );
+
+    const wchar_t className[] =
+        L"StudentDataExtractorGuiWindow";
+
     WNDCLASSW windowClass{};
-    windowClass.hInstance = instance;
-    windowClass.lpfnWndProc = windowProcedure;
-    windowClass.lpszClassName = className;
-    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
-    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    RegisterClassW(&windowClass);
 
-    HWND window = CreateWindowExW(0, className, L"Student Data Extractor",
-                                  WS_OVERLAPPEDWINDOW,
-                                  CW_USEDEFAULT, CW_USEDEFAULT, 680, 550,
-                                  nullptr, nullptr, instance, nullptr);
+    windowClass.hInstance =
+        instance;
+
+    windowClass.lpfnWndProc =
+        windowProcedure;
+
+    windowClass.lpszClassName =
+        className;
+
+    windowClass.hCursor =
+        LoadCursorW(
+            nullptr,
+            MAKEINTRESOURCEW(32512)
+        );
+
+    windowClass.hbrBackground =
+        reinterpret_cast<HBRUSH>(
+            COLOR_WINDOW + 1
+        );
+
+    RegisterClassW(
+        &windowClass
+    );
+
+    HWND window =
+        CreateWindowExW(
+            0,
+            className,
+            L"Student Data Extractor",
+            WS_OVERLAPPEDWINDOW,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            680,
+            550,
+            nullptr,
+            nullptr,
+            instance,
+            nullptr
+        );
+
     if (window == nullptr) {
         DeleteObject(g_font);
         CoUninitialize();
         return 1;
     }
 
-    ShowWindow(window, showCommand);
+    ShowWindow(
+        window,
+        showCommand
+    );
+
     UpdateWindow(window);
 
     MSG message{};
-    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+
+    while (
+        GetMessageW(
+            &message,
+            nullptr,
+            0,
+            0
+        ) > 0
+    ) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
 
     CoUninitialize();
-    return static_cast<int>(message.wParam);
+
+    return static_cast<int>(
+        message.wParam
+    );
 }
